@@ -2,7 +2,7 @@ const fs = require('fs');
 const yargs = require('yargs');
 const puppeteer = require('puppeteer');
 const critical = require('critical');
-const CleanCSS = require('clean-css');
+const cssnano = require('cssnano');
 
 const argv = yargs
     .command('run', 'Generate critical css from a list of urls.', {
@@ -30,9 +30,13 @@ function createDirIfNotExist(path){
   }
 }
 
+var counter = 0;
+
 async function generate(page){
 
-  console.log('generate', page._target._targetInfo.url);
+  var pageUrl = page._target._targetInfo.url;
+
+  console.log('generating...', pageUrl);
 
   const pageHTML = await page.content();
 
@@ -57,52 +61,59 @@ async function generate(page){
         }
       ]
   }).then(function(criticalCSS){
-    const cleanCriticalCSS = new CleanCSS().minify(criticalCSS);
-    console.log('argv.output', argv.output)
-    createDirIfNotExist('dest');
-    fs.writeFileSync('dest/' + argv.output, cleanCriticalCSS.styles, {flag: 'a'});
+
+    cssnano.process(criticalCSS).then(function(result){
+      // write individual css file
+      let counterCSSFile = `dest/${counter}.css`;
+      fs.writeFileSync(counterCSSFile, result, {flag: 'w'});
+      console.log(` - output ${pageUrl} to ${counterCSSFile}`);
+      counter++;
+
+      // Update complete css file
+      let destCssFile = `dest/${argv.output}`;
+      let destCss = fs.readFileSync(destCssFile);
+
+      cssnano.process(destCss + criticalCSS).then(function(combinedResult){
+        fs.writeFileSync(destCssFile, combinedResult, {flag: 'w'} );
+      });
+    });
 
   });
 };
 
 async function asyncForEach(array, callback) {
-  console.log('asyncForEach', array);
   for (let index = 0; index < array.length; index++) {
     await callback(array[index], index, array);
   }
 }
 
 async function cleanup(){
+  // TODO: cleanup src
+
+  // Cleanup dest
   createDirIfNotExist('dest');
   fs.writeFileSync('dest/' + argv.output, '', {flag: 'w'});
 }
 
+async function goToUrl(page, url){
+  await page.goto(url);
+  await generate(page);
+}
+
 async function init(){
-  // TODO: cleanup src & dest
-  cleanup()
-
-  console.log('argv', argv);
-
-  console.log('init');
+  await cleanup();
 
   const browser = await puppeteer.launch();
-
+  const page = await browser.newPage();
+  await page.setViewport({
+    width: 768,
+    height: 1024
+  });
 
   var urls = argv.urls.split(',');
-  // console.log('init.urls', urls);
-  // asyncForEach(urls, async (url) => {
-    // console.log('init.asyncForEach', url);
-    let page = await browser.newPage();
-    await page.setViewport({
-      width: 768,
-      height: 1024
-    });
-
-    await page.goto(urls[0]);
-    await generate(page);
-  // });
-
-  console.log('init.done');
+  await asyncForEach(urls, async function(url){
+    await goToUrl(page, url)
+  });
 
   await browser.close();
 };
