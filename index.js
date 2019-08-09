@@ -18,6 +18,16 @@ const argv = yargs
             alias: 'o',
             type: 'string',
             default: 'critical.css'
+        },
+        'auth.username': {
+            description: 'Optional, basic authentication username',
+            alias: 'user',
+            type: 'string'
+        },
+        'auth.password': {
+            description: 'Optional, basic authentication username',
+            alias: 'pass',
+            type: 'string'
         }
     })
     .help()
@@ -96,6 +106,9 @@ async function cleanup(){
 }
 
 async function goToUrl(page, url){
+  if( typeof argv.auth !== 'undefined'){
+    await page.authenticate({ username: argv.auth.username, password: argv.auth.password });
+  }
   await page.goto(url);
   await generate(page);
 }
